@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mines Duel</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="topbar" aria-label="match controls">
+        <div class="brand">
+          <span class="mark" aria-hidden="true">M</span>
+          <div>
+            <h1>Mines Duel</h1>
+            <p>同じ盤面を先に解いた方が勝ち</p>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="online-controls" aria-label="online match controls">
+            <button id="createRoom">Create Room</button>
+            <input id="roomCode" type="text" inputmode="latin" autocomplete="off" placeholder="Room code" maxlength="6" />
+            <button id="joinRoom">Join</button>
+          </div>
+          <label class="select-wrap">
+            <span>難易度</span>
+            <select id="difficulty">
+              <option value="beginner">Beginner 9x9 / 10</option>
+              <option value="intermediate" selected>Intermediate 16x16 / 40</option>
+              <option value="expert">Expert 30x16 / 99</option>
+            </select>
+          </label>
+          <button id="newMatch" class="primary">New Match</button>
+        </div>
+      </section>
+
+      <section class="online-status" aria-live="polite">
+        <strong id="onlineState">Local duel</strong>
+        <span id="shareUrl">公開URLを2人で開いて Create Room から開始</span>
+      </section>
+
+      <section class="scoreboard" aria-live="polite">
+        <article class="score player-a">
+          <span>Player A</span>
+          <strong id="timeA">0.0s</strong>
+          <em id="stateA">Ready</em>
+        </article>
+        <article class="versus">
+          <strong id="matchState">Ready</strong>
+          <span id="seedLabel">Seed: -</span>
+        </article>
+        <article class="score player-b">
+          <span>Player B</span>
+          <strong id="timeB">0.0s</strong>
+          <em id="stateB">Ready</em>
+        </article>
+      </section>
+
+      <section class="arena">
+        <article class="player-panel" data-player="A">
+          <header>
+            <div>
+              <h2>Player A</h2>
+              <p>左クリック: 開く / 右クリック: 旗</p>
+            </div>
+            <button class="reset" data-reset="A" title="Player Aだけリトライ">Retry</button>
+          </header>
+          <div id="boardA" class="board" aria-label="Player A board"></div>
+        </article>
+
+        <article class="player-panel" data-player="B">
+          <header>
+            <div>
+              <h2>Player B</h2>
+              <p>左クリック: 開く / 右クリック: 旗</p>
+            </div>
+            <button class="reset" data-reset="B" title="Player Bだけリトライ">Retry</button>
+          </header>
+          <div id="boardB" class="board" aria-label="Player B board"></div>
+        </article>
+      </section>
+
+      <section class="rules">
+        <div>
+          <strong>勝利条件</strong>
+          <span>地雷以外の全マスを開いた瞬間に完走。両者が完走したら速い方が勝ち。</span>
+        </div>
+        <div>
+          <strong>フェア仕様</strong>
+          <span>2人は同じseedから生成された同一盤面。試合の最初に開かれた地点は必ず安全。</span>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

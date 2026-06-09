@@ -1,0 +1,13 @@
+{
+  "name": "mines-duel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "1v1 Minesweeper speed duel with online rooms.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
