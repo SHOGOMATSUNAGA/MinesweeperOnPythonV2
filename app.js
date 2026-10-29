@@ -33,6 +33,8 @@ let online = {
   syncing: false,
 };
 
+const LOCAL_COUNTDOWN_MS = 3000;
+
 function mulberry32(seed) {
   return function random() {
     seed |= 0;
@@ -105,11 +107,17 @@ function startMatch(roomState) {
     seed,
     sharedBoard: null,
     firstIndex: roomState?.firstIndex ?? null,
+    startAt: roomState?.startAt ?? Date.now() + LOCAL_COUNTDOWN_MS,
+    revealed: Boolean(roomState?.revealed),
     players: {
       A: newPlayer("A"),
       B: newPlayer("B"),
     },
   };
+  if (!online.enabled) {
+    match.players.A.connected = true;
+    match.players.B.connected = true;
+  }
   if (match.firstIndex !== null) ensureGenerated(match.firstIndex);
   if (roomState) applyRoomState(roomState);
   els.seedLabel.textContent = `Seed: ${seed}`;
@@ -124,13 +132,23 @@ function renderAll() {
 }
 
 function canControl(id) {
-  return !online.enabled || online.playerId === id;
+  return (!online.enabled || online.playerId === id) && isMatchLive();
+}
+
+function isMatchLive() {
+  return Boolean(match?.startAt) && Date.now() >= match.startAt;
+}
+
+function countdownSeconds() {
+  return Math.max(0, Math.ceil((match.startAt - Date.now()) / 1000));
 }
 
 function renderPlayer(id) {
   const player = match.players[id];
   const boardEl = id === "A" ? els.boardA : els.boardB;
+  const hiddenOpponent = online.enabled && !match.revealed && id !== online.playerId;
   boardEl.style.setProperty("--cols", match.config.cols);
+  boardEl.classList.toggle("concealed", hiddenOpponent);
   boardEl.innerHTML = "";
 
   const total = match.config.rows * match.config.cols;
@@ -141,8 +159,8 @@ function renderPlayer(id) {
     button.dataset.index = index;
     button.setAttribute("aria-label", `cell ${index + 1}`);
 
-    const isOpen = player.open.has(index);
-    const isFlag = player.flags.has(index);
+    const isOpen = !hiddenOpponent && player.open.has(index);
+    const isFlag = !hiddenOpponent && player.flags.has(index);
     const cell = player.board?.[index];
 
     if (isOpen) {
@@ -160,7 +178,7 @@ function renderPlayer(id) {
       button.textContent = "!";
     }
 
-    if (!canControl(id) || player.finish || player.busted) {
+    if (hiddenOpponent || !canControl(id) || player.finish || player.busted) {
       button.disabled = true;
     }
 
@@ -199,9 +217,9 @@ async function openCell(id, index) {
 
   const cell = player.board[index];
   if (cell.mine) {
+    player.remoteElapsed = elapsed(player);
     player.busted = true;
     player.open.add(index);
-    revealMines(player);
     renderPlayer(id);
     updateStatus();
     await sendSnapshot();
@@ -241,12 +259,6 @@ async function toggleFlag(id, index) {
   await sendSnapshot();
 }
 
-function revealMines(player) {
-  player.board.forEach((cell, index) => {
-    if (cell.mine) player.open.add(index);
-  });
-}
-
 function checkWin(player) {
   const safeCells = match.config.rows * match.config.cols - match.config.mines;
   if (player.open.size >= safeCells) {
@@ -257,10 +269,20 @@ function checkWin(player) {
 
 function retryPlayer(id) {
   if (!canControl(id)) return;
+  const previousPlayer = match.players[id];
+  const carriedElapsed = elapsed(previousPlayer);
   const oldBoard = match.sharedBoard;
-  match.players[id] = newPlayer(id);
-  match.players[id].board = oldBoard;
-  match.players[id].generated = Boolean(oldBoard);
+  const retriedPlayer = newPlayer(id);
+  retriedPlayer.board = oldBoard;
+  retriedPlayer.generated = Boolean(oldBoard);
+
+  // A retry gives the player a fresh board, but never erases time already used.
+  if (previousPlayer.start || carriedElapsed > 0) {
+    retriedPlayer.remoteElapsed = carriedElapsed;
+    retriedPlayer.start = performance.now() - carriedElapsed * 1000;
+  }
+
+  match.players[id] = retriedPlayer;
   renderPlayer(id);
   updateStatus();
   sendSnapshot();
@@ -268,6 +290,8 @@ function retryPlayer(id) {
 
 function elapsed(player) {
   if (player.finishElapsed !== null) return player.finishElapsed;
+  if (player.busted) return player.remoteElapsed || 0;
+  if (isMatchLive() && player.connected) return Math.max(0, (Date.now() - match.startAt) / 1000);
   if (!player.start) return player.remoteElapsed || 0;
   return ((player.finish || performance.now()) - player.start) / 1000;
 }
@@ -281,18 +305,25 @@ function updateStatus() {
     const player = match.players[id];
     const timeEl = id === "A" ? els.timeA : els.timeB;
     const stateEl = id === "A" ? els.stateA : els.stateB;
+    const hiddenOpponent = online.enabled && !match.revealed && id !== online.playerId;
     timeEl.textContent = formatTime(elapsed(player));
     stateEl.className = "";
 
     if (!player.connected) {
       stateEl.textContent = "Waiting";
+    } else if (!match.startAt) {
+      stateEl.textContent = "Waiting for opponent";
+    } else if (!isMatchLive()) {
+      stateEl.textContent = `Starting in ${countdownSeconds()}`;
+    } else if (hiddenOpponent) {
+      stateEl.textContent = "Hidden until finish";
     } else if (player.finish) {
       stateEl.textContent = "Finished";
       stateEl.classList.add("winner");
     } else if (player.busted) {
       stateEl.textContent = "Mine hit";
       stateEl.classList.add("busted");
-    } else if (player.start || player.remoteElapsed > 0) {
+    } else if (isMatchLive()) {
       stateEl.textContent = "Solving";
     } else {
       stateEl.textContent = "Ready";
@@ -301,7 +332,11 @@ function updateStatus() {
 
   const a = match.players.A;
   const b = match.players.B;
-  if (a.finish && b.finish) {
+  if (!match.startAt) {
+    els.matchState.textContent = "Waiting for opponent";
+  } else if (!isMatchLive()) {
+    els.matchState.textContent = `Starting in ${countdownSeconds()}`;
+  } else if (a.finish && b.finish) {
     const winner = elapsed(a) <= elapsed(b) ? "A" : "B";
     els.matchState.textContent = `Player ${winner} wins`;
   } else if ((a.finish && b.busted) || (a.finish && b.connected)) {
@@ -310,7 +345,7 @@ function updateStatus() {
     els.matchState.textContent = "Player B leads";
   } else if (a.busted && b.busted) {
     els.matchState.textContent = "Both busted";
-  } else if (a.start || b.start || a.remoteElapsed > 0 || b.remoteElapsed > 0) {
+  } else if (isMatchLive()) {
     els.matchState.textContent = "Live";
   } else {
     els.matchState.textContent = online.enabled ? "Waiting for start" : "Ready";
@@ -330,7 +365,7 @@ function playerSnapshot(player) {
   return {
     open: [...player.open],
     flags: [...player.flags],
-    started: Boolean(player.start || player.remoteElapsed > 0),
+    started: isMatchLive(),
     elapsed: elapsed(player),
     finishElapsed: player.finishElapsed,
     busted: player.busted,
@@ -342,6 +377,10 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       "content-type": "application/json",
+      ...(online.enabled ? {
+        "x-player-id": online.playerId,
+        "x-player-token": online.token,
+      } : {}),
       ...(options.headers || {}),
     },
   });
@@ -411,6 +450,19 @@ function applyRemotePlayer(id, remote) {
   player.connected = Boolean(remote);
   if (!remote || online.playerId === id) return;
 
+  if (remote.hidden) {
+    player.open.clear();
+    player.flags.clear();
+    player.remoteElapsed = Number(remote.elapsed || 0);
+    player.finishElapsed = null;
+    player.finish = null;
+    player.busted = Boolean(remote.busted);
+    player.start = remote.started && !player.busted
+      ? performance.now() - player.remoteElapsed * 1000
+      : null;
+    return;
+  }
+
   player.open = new Set(remote.open || []);
   player.flags = new Set(remote.flags || []);
   player.remoteElapsed = Number(remote.elapsed || 0);
@@ -425,6 +477,8 @@ function applyRoomState(room) {
   match.config = room.config;
   match.seed = room.seed;
   match.firstIndex = room.firstIndex;
+  match.startAt = room.startAt;
+  match.revealed = Boolean(room.revealed);
   els.seedLabel.textContent = `Seed: ${room.seed}`;
 
   if (room.firstIndex !== null) ensureGenerated(room.firstIndex);

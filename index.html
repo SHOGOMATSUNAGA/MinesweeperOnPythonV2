@@ -64,7 +64,7 @@
               <h2>Player A</h2>
               <p>左クリック: 開く / 右クリック: 旗</p>
             </div>
-            <button class="reset" data-reset="A" title="Player Aだけリトライ">Retry</button>
+            <button class="reset" data-reset="A" title="Player Aだけリトライ。タイマーは継続します">Retry</button>
           </header>
           <div id="boardA" class="board" aria-label="Player A board"></div>
         </article>
@@ -75,7 +75,7 @@
               <h2>Player B</h2>
               <p>左クリック: 開く / 右クリック: 旗</p>
             </div>
-            <button class="reset" data-reset="B" title="Player Bだけリトライ">Retry</button>
+            <button class="reset" data-reset="B" title="Player Bだけリトライ。タイマーは継続します">Retry</button>
           </header>
           <div id="boardB" class="board" aria-label="Player B board"></div>
         </article>
@@ -84,11 +84,11 @@
       <section class="rules">
         <div>
           <strong>勝利条件</strong>
-          <span>地雷以外の全マスを開いた瞬間に完走。両者が完走したら速い方が勝ち。</span>
+          <span>3秒のカウントダウン後に同時スタート。地雷以外の全マスを開いた瞬間に完走。両者が完走したら速い方が勝ち。</span>
         </div>
         <div>
           <strong>フェア仕様</strong>
-          <span>2人は同じseedから生成された同一盤面。試合の最初に開かれた地点は必ず安全。</span>
+          <span>2人は同じseedから生成された同一盤面。試合の最初に開かれた地点は必ず安全。経過時間は公開し、盤面はどちらかが完走するまで非公開。</span>
         </div>
       </section>
     </main>

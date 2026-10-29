@@ -7,6 +7,7 @@ const PORT = Number(process.env.PORT || 4174);
 const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const rooms = new Map();
+const COUNTDOWN_MS = 3000;
 
 const CONFIGS = {
   beginner: { rows: 9, cols: 9, mines: 10 },
@@ -71,7 +72,41 @@ function newPlayer(id, playerToken) {
   };
 }
 
-function publicRoom(room) {
+function hasFinishedPlayer(room) {
+  return Object.values(room.players).some((player) => player && player.finishElapsed !== null);
+}
+
+function publicPlayer(player, includeProgress) {
+  if (!player) return null;
+
+  const visible = {
+    id: player.id,
+    connected: true,
+  };
+
+  if (!includeProgress) {
+    return {
+      ...visible,
+      hidden: true,
+      started: player.started,
+      elapsed: player.elapsed,
+      busted: player.busted,
+    };
+  }
+
+  return {
+    ...visible,
+    open: player.open,
+    flags: player.flags,
+    started: player.started,
+    elapsed: player.elapsed,
+    finishElapsed: player.finishElapsed,
+    busted: player.busted,
+  };
+}
+
+function publicRoom(room, viewerId = null) {
+  const revealed = hasFinishedPlayer(room);
   return {
     code: room.code,
     difficulty: room.difficulty,
@@ -79,12 +114,21 @@ function publicRoom(room) {
     seed: room.seed,
     firstIndex: room.firstIndex,
     createdAt: room.createdAt,
+    startAt: room.startAt,
     version: room.version,
+    revealed,
     players: {
-      A: room.players.A && { ...room.players.A, token: undefined },
-      B: room.players.B && { ...room.players.B, token: undefined },
+      A: publicPlayer(room.players.A, revealed || viewerId === "A"),
+      B: publicPlayer(room.players.B, revealed || viewerId === "B"),
     },
   };
+}
+
+function viewerIdFromRequest(req, room) {
+  const playerId = req.headers["x-player-id"];
+  const playerToken = req.headers["x-player-token"];
+  const player = room.players[playerId];
+  return player && player.token === playerToken ? playerId : null;
 }
 
 function createRoom(difficulty) {
@@ -97,6 +141,7 @@ function createRoom(difficulty) {
     config: CONFIGS[selected],
     seed: Math.floor(Math.random() * 1_000_000_000),
     firstIndex: null,
+    startAt: null,
     createdAt: Date.now(),
     version: 1,
     players: {
@@ -152,7 +197,7 @@ async function handleApi(req, res) {
     json(res, 200, {
       playerId: created.playerId,
       token: created.token,
-      room: publicRoom(created.room),
+      room: publicRoom(created.room, created.playerId),
     });
     return;
   }
@@ -171,8 +216,9 @@ async function handleApi(req, res) {
     }
     const playerToken = token();
     room.players.B = newPlayer("B", playerToken);
+    room.startAt = Date.now() + COUNTDOWN_MS;
     room.version += 1;
-    json(res, 200, { playerId: "B", token: playerToken, room: publicRoom(room) });
+    json(res, 200, { playerId: "B", token: playerToken, room: publicRoom(room, "B") });
     return;
   }
 
@@ -183,7 +229,7 @@ async function handleApi(req, res) {
       json(res, 404, { error: "room not found" });
       return;
     }
-    json(res, 200, { room: publicRoom(room) });
+    json(res, 200, { room: publicRoom(room, viewerIdFromRequest(req, room)) });
     return;
   }
 
@@ -202,6 +248,11 @@ async function handleApi(req, res) {
       return;
     }
 
+    if (!room.startAt || Date.now() < room.startAt) {
+      json(res, 409, { error: "countdown is still running" });
+      return;
+    }
+
     if (Number.isInteger(body.firstIndex) && room.firstIndex === null) {
       room.firstIndex = body.firstIndex;
     }
@@ -216,7 +267,7 @@ async function handleApi(req, res) {
     }
     player.lastSeen = Date.now();
     room.version += 1;
-    json(res, 200, { room: publicRoom(room) });
+    json(res, 200, { room: publicRoom(room, body.playerId) });
     return;
   }
 
